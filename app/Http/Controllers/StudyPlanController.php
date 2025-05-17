@@ -71,6 +71,7 @@ class StudyPlanController extends Controller
 
     public function process($files)
     {
+        return $files;
         try {
             $processor = new FileProcessingService();
             $summaries = [];
