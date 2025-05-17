@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('quizzes', function (Blueprint $table) {
             $table->id();
             $table->uuid('user_id')->index();
-            $table->foreign('study_plan_id')->references('id')->on('study_plans')->onDelete('cascade');
+            $table->foreignId('study_plan_id')->references('id')->on('study_plans')->onDelete('cascade');
+            $table->text('question');
             $table->enum('type', ['multiple_choice', 'true_false', 'short_answer']);
             $table->json('options')->nullable();
             $table->text('answer'); 
