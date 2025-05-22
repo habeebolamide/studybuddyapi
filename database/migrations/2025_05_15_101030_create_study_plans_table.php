@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('course_title');
             $table->string('course_description');
             $table->json('uploaded_files');
+            $table->json('simplified_notes')->nullable();
             $table->timestamps();
 
             // Foreign key constraint
