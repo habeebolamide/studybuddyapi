@@ -11,43 +11,46 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class StudyPlanController extends Controller
 {
     public function uploadfile(Request $request)
     {
         try {
-            $request->validate([
+            $validator = Validator::make($request->all(), [
                 "course_code" => "required",
                 "course_title" => "required",
                 "course_description" => "required",
-                'uploaded_files.*' => 'required|file|max:10240', // max 10MB
+                'uploaded_file' => 'required|file|max:10240',
             ]);
+            if ($validator->fails()) {
+                return sendError('Validation Error.', $validator->errors(), 400);
+            }
 
             $userId = Auth::id();
-            $uploadedFiles = [];
-            return DB::transaction(function () use ($userId, $request, $uploadedFiles) {
-                foreach ($request->file('uploaded_files') as $key => $file) {
-                    $originalName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
-                    $extension = $file->getClientOriginalExtension();
-                    // return $originalName;
-                    $filename = Auth::id() . '_' . Str::slug($originalName, '_') . '.' . $extension;
-                    $path = 'uploads/' . $filename;
+            return DB::transaction(function () use ($userId, $request) {
+                $file = $request->file('uploaded_file');
+                $originalName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+                $extension = $file->getClientOriginalExtension();
 
-                    // Check if file already exists for this user (based on path or logic)
-                    if (Storage::disk('public')->exists($path)) {
-                        return response()->json([
-                            'error' => "A file with the same name already exists for this user: {$filename}"
-                        ], 409); // Conflict
-                    }
-                    // Save file
-                    $storedPath = $file->storeAs('uploads', $filename, 'public');
+                $filename = Auth::id() . '_' . Str::slug($originalName, '_') . '.' . $extension;
+                $path = 'uploads/' . $filename;
 
-                    $uploadedFiles[] = [
-                        'stored_path' => $storedPath,
-                        'file_url' => asset('storage/' . $storedPath),
-                    ];
+
+                if (Storage::disk('public')->exists($path)) {
+                    return response()->json([
+                        'error' => "A file with the same name already exists for this user: {$filename}"
+                    ], 409);
                 }
+
+                $storedPath = Storage::disk('public')->putFileAs('uploads', $file, $filename);
+
+
+                $uploadedFiles[] = [
+                    'stored_path' => $storedPath,
+                    'file_url' => asset('storage/' . $storedPath),
+                ];
 
                 // Save study plan (after ensuring no conflicts)
                 $studyplan = StudyPlan::create([
@@ -58,7 +61,7 @@ class StudyPlanController extends Controller
                     "uploaded_files" => json_encode($uploadedFiles),
                 ]);
 
-                return $this->process($uploadedFiles,$studyplan->id);
+                return $this->process($uploadedFiles, $studyplan->id);
             });
         } catch (\Exception $e) {
             return response()->json([
@@ -68,20 +71,19 @@ class StudyPlanController extends Controller
     }
 
 
-    public function process($files,$id)
+    public function process($files, $id)
     {
         try {
-            $processor = new FileProcessingService();
             $summaries = [];
             foreach ($files as $file) {
-                $text = $processor->extractText($file['stored_path']);
-                // return $text;
-                $summary = $this->summarizeText($text);
+
+                $summary = $this->processPdfWithGemini($file['stored_path']);
 
                 if ($summary) {
-                   StudyPlan::where('id',$id)->update([
+                    StudyPlan::where('id', $id)->update([
                         "simplified_notes" => $summary
-                   ]);
+                    ]);
+                    app(QuizController::class)->generateQuizQuestion($id);
                 }
                 $summaries[] = [
                     'file' => $file['stored_path'],
@@ -97,50 +99,11 @@ class StudyPlanController extends Controller
         }
     }
 
-    // private function summarizeText($text)
-    // {
-    //     $response = Http::withHeaders([
-    //         'Authorization' => 'Bearer ' . env('COHERE_API_KEY'),
-    //         'Content-Type' => 'application/json',
-    //     ])->post('https://api.cohere.ai/v1/chat', [
-    //         'model' => 'command-r-plus',
-    //         'chat_history' => [],
-    //         'message' => " 
-    //                 You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in **valid JSON format**.
-
-    //                 Each note should:
-    //                 - Contain a 'topic' field (short summary or title of the section)
-    //                 - Include a 'note' field with an easy-to-understand explanation
-    //                 - Contain **at least 5 examples** there could be more
-
-    //                 Output only the JSON structure. Do NOT include markdown code blocks (e.g. ```json) or extra formatting.Example output format:
-
-    //                 [
-    //                     {
-    //                         'topic': 'Photosynthesis',
-    //                         'note': 'Photosynthesis is the process where plants use sunlight, water, and carbon dioxide to make food. This happens in chloroplasts.\\n\\nExamples:\\n- Plants convert sunlight into energy.\\n- Oxygen is released as a by-product.\\n- Glucose is stored as energy.'
-    //                     },
-    //                     {
-    //                         'topic': 'Cell Structure',
-    //                         'note': 'Cells have parts like the nucleus, mitochondria, and membrane. Each part has a specific job.\\n\\nExamples:\\n- The nucleus stores DNA.\\n- The mitochondria create energy.\\n- The membrane protects the cell.'
-    //                     }
-    //                 ]
-    //             " . $text,
-    //     ]);
-
-    //     if (!$response->successful()) {
-    //         Log::error('Cohere simplification failed', ['body' => $response->body()]);
-    //         return 'Error generating notes.';
-    //     }
-
-    //     return $response->json('text') ?? 'No notes generated.';
-    // }
-
     private function summarizeText($text)
     {
-        $geminiApiKey = env('GEMINI_API_KEY'); 
-        $geminiModel = 'gemini-1.5-flash';    
-       
+        $geminiApiKey = env('GEMINI_API_KEY');
+        $geminiModel = 'gemini-1.5-flash';
+
         $fullPrompt = "
         You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in **valid JSON format**.
 
@@ -175,7 +138,7 @@ class StudyPlanController extends Controller
             'contents' => [
                 [
                     'parts' => [
-                        ['text' => $fullPrompt] 
+                        ['text' => $fullPrompt]
                     ]
                 ]
             ]
@@ -201,10 +164,125 @@ class StudyPlanController extends Controller
 
         $cleanedJson = preg_replace('/^```json|```$/m', '', $generatedJsonString);
         $cleanedJson = trim($cleanedJson);
-        $studyplan = json_decode($cleanedJson, true); 
+        $studyplan = json_decode($cleanedJson, true);
 
-        Log::info("cleaned json data" ,['response' => $studyplan]);
+        Log::info("cleaned json data", ['response' => $studyplan]);
 
         return $studyplan; // Returns a PHP array of notes
+    }
+
+    private function processPdfWithGemini(
+        string $pdfFilePath,
+        string $geminiModel = 'gemini-1.5-flash' // 'gemini-1.5-pro' is also excellent for vision
+    ) {
+        $geminiApiKey = env('GEMINI_API_KEY');
+
+        if (empty($geminiApiKey)) {
+            Log::error('GEMINI_API_KEY is not set in the .env file.');
+            return 'API key not configured.';
+        }
+
+        // Read the PDF file content
+        if (!Storage::disk('public')->exists($pdfFilePath)) {
+            return 'PDF file not found.';
+        }
+        $pdfContent = Storage::disk('public')->get($pdfFilePath);
+
+        $mimeType = 'application/pdf'; // Explicitly define MIME type
+
+        // Determine if to use inline data or File API based on size (conceptual)
+        // For simplicity, this example uses inline data. For larger files,
+        // you'd implement the File API upload first.
+        // $fileSize = strlen($pdfContent);
+        // if ($fileSize > 20 * 1024 * 1024) { // 20 MB limit
+        //     // Implement File API upload here, get fileUri, then use it in contents
+        //     // This would involve a separate POST to /v1beta/files and then referencing the file.
+        //     Log::warning('PDF is too large for inline, File API not implemented in this example.');
+        //     return 'PDF too large for direct upload in this example. File API needed.';
+        // }
+
+        $userPrompt = "
+        You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in **valid JSON format**.
+
+        Each note should:
+        - Contain a 'topic' field (short summary or title of the section)
+        - Include a 'note' field with an easy-to-understand explanation
+
+        Each topic should:
+        - Contain **at least 3-5 examples** there could be more
+
+        Output only the JSON structure. Do NOT include markdown code blocks (e.g. ```json) or extra formatting.
+        Example output format:
+
+        [
+            {
+                'topic': 'Photosynthesis',
+                'note': 'Photosynthesis is the process where plants use sunlight, water, and carbon dioxide to make food. This happens in chloroplasts.\\n\\nExamples:\\n- Plants convert sunlight into energy.\\n- Oxygen is released as a by-product.\\n- Glucose is stored as energy.'
+            },
+            {
+                'topic': 'Cell Structure',
+                'note': 'Cells have parts like the nucleus, mitochondria, and membrane. Each part has a specific job.\\n\\nExamples:\\n- The nucleus stores DNA.\\n- The mitochondria create energy.\\n- The membrane protects the cell.'
+            }
+        ]
+        ";
+
+        // Encode PDF content to base64 for inline inclusion
+        $base64Pdf = base64_encode($pdfContent);
+
+        // Make the HTTP POST request to the Gemini API
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'x-goog-api-key' => $geminiApiKey,
+        ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$geminiModel}:generateContent", [
+            'contents' => [
+                [
+                    'parts' => [
+                        [
+                            'inlineData' => [ // Use 'inlineData' for base64 encoded files
+                                'mimeType' => $mimeType,
+                                'data' => $base64Pdf,
+                            ]
+                        ],
+                        ['text' => $userPrompt] // Your text prompt
+                    ]
+                ]
+            ]
+        ]);
+
+        // Error handling and response parsing (similar to previous example)
+        if (!$response->successful()) {
+            Log::error('Gemini PDF processing failed', [
+                'status' => $response->status(),
+                'body' => $response->body()
+            ]);
+            return sendError('Error processing PDF with AI.', [], 400);
+        }
+
+        $responseData = $response->json();
+
+        if (
+            !isset($responseData['candidates'][0]['content']['parts'][0]['text']) ||
+            empty($responseData['candidates'][0]['content']['parts'][0]['text'])
+        ) {
+            Log::warning('Gemini response did not contain expected text content after PDF processing.', ['response' => $responseData]);
+            return sendError('No AI content generated from PDF or unexpected response format.', [], 400);
+        }
+
+        $generatedJsonString = $responseData['candidates'][0]['content']['parts'][0]['text'];
+
+        $cleanedJson = preg_replace('/^```json|```$/m', '', $generatedJsonString);
+        $cleanedJson = trim($cleanedJson);
+        $studynotes = json_decode($cleanedJson, true);
+        return $studynotes;
+    }
+
+    public function getAll()
+    {
+        $all = StudyPlan::where('user_id', Auth::id())->get();
+        if ($all) {
+            return sendResponse('All Study Notes', $all);
+        }
+
+        return sendError('Error fetching Notes', [], 400);
     }
 }

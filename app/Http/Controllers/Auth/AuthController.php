@@ -17,57 +17,59 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'email' => 'required|string|email',
             'password' => 'required|string',
-            // 'remember_me' => 'boolean'
         ]);
+        if ($validator->fails()) {
+            return sendError('Validation Error.', $validator->errors(), 400);
+        }
 
         $credentials = request(['email', 'password']);
 
         if (!Auth::attempt($credentials)) {
-            return sendError('Invalid email or password',[],400);
+            return sendError('Invalid email or password', [], 400);
         }
 
         $success['userData'] = User::where('email', $request->email)->first();
         $tokenResult = $success['userData']->createToken('API TOKEN');
         $success['token'] = $tokenResult->plainTextToken;
 
-        return sendResponse('Login Successfull', $success);  
+        return sendResponse('Login Successfull', $success);
     }
 
     public function register(Request $request)
     {
-       
-            $validator = Validator::make($request->all(), [
-                'name' => ['required', 'string', 'max:255'],
-                'uname' => ['required', 'max:255'],
-                'email' => 'required|string|unique:users',
-                'password' => [
-                    'required',
-                    'string',
-                    'min:8',
-                ],
-                'phone' => [
-                    'required',
-                    'string',
-                    'min:10',
-                    'unique:users'
-                ],
-                // 'confirm_password' => 'required_with:password|same:password',
-            ]);
-    
-            if ($validator->fails()) {
-                return sendError('Validation Error.', $validator->errors(),400);   
-            }
-            $user = User::create([
-                'name'  => $request->name,
-                'uname'  => $request->uname,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'password' => Hash::make($request->password),
-            ]);
-            return sendResponse('User Registered Successfully', $user);  
+
+        $validator = Validator::make($request->all(), [
+            'name' => ['required', 'string', 'max:255'],
+            'uname' => ['required', 'max:255'],
+            'email' => 'required|string|unique:users',
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+            ],
+            'phone' => [
+                'required',
+                'string',
+                'min:10',
+                'unique:users'
+            ],
+            // 'confirm_password' => 'required_with:password|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return sendError('Validation Error.', $validator->errors(), 400);
+        }
+        $user = User::create([
+            'name'  => $request->name,
+            'uname'  => $request->uname,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'password' => Hash::make($request->password),
+        ]);
+        return sendResponse('User Registered Successfully', $user);
     }
 
 
@@ -86,11 +88,11 @@ class AuthController extends Controller
         }
 
         // Clean up old reset records (older than 30 minute)
-        OtpCode::where(function ($query) use ($request,$type) {
+        OtpCode::where(function ($query) use ($request, $type) {
             $query->where('created_at', '>', Carbon::now()->subMinutes(10))
                 ->where('type', $type);
         })
-            ->orWhere(function ($query) use ($request,$type) {
+            ->orWhere(function ($query) use ($request, $type) {
                 $query->where('type', $type)
                     ->where('email', $request->email);
             })
