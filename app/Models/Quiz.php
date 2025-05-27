@@ -12,4 +12,10 @@ class Quiz extends Model
     protected $casts = [
         'options' => 'array',
     ];
+
+    public function questions()
+    {
+        return $this->hasMany(QuizQuestion::class);
+    }
+    
 }

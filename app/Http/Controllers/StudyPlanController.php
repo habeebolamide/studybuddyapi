@@ -179,12 +179,12 @@ class StudyPlanController extends Controller
 
         if (empty($geminiApiKey)) {
             Log::error('GEMINI_API_KEY is not set in the .env file.');
-            return 'API key not configured.';
+            return sendError('API key not configured.', [], 400);
         }
 
         // Read the PDF file content
         if (!Storage::disk('public')->exists($pdfFilePath)) {
-            return 'PDF file not found.';
+            return sendError('PDF file not found', [], 400);
         }
         $pdfContent = Storage::disk('public')->get($pdfFilePath);
 
@@ -281,6 +281,16 @@ class StudyPlanController extends Controller
         $all = StudyPlan::where('user_id', Auth::id())->get();
         if ($all) {
             return sendResponse('All Study Notes', $all);
+        }
+
+        return sendError('Error fetching Notes', [], 400);
+    }
+
+     public function getSimplifiedNotes($id)
+    {
+        $simplefied_notes = StudyPlan::where('id', $id)->pluck('simplified_notes')->first();
+        if ($simplefied_notes) {
+            return sendResponse('All Study Notes', json_decode($simplefied_notes));
         }
 
         return sendError('Error fetching Notes', [], 400);

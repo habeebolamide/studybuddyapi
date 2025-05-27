@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Quiz;
+use App\Models\QuizQuestion;
 use App\Models\StudyPlan\StudyPlan;
 use Illuminate\Support\Facades\Http;
 
@@ -15,24 +16,33 @@ class QuizController extends Controller
 {
     //
 
-    public function getQuiz($study_plan_id){
-        $all = Quiz::where('study_plan_id' , $study_plan_id)->get();
-        if ($all) {
-            return sendResponse('All Quix', $all);
+    public function getQuiz($study_plan_id)
+    {
+        $quiz = Quiz::where('study_plan_id', $study_plan_id)
+            ->with('questions')
+            ->first();
+
+        if ($quiz) {
+            foreach ($quiz->questions as $question) {
+                $question->options = json_decode($question->options);
+            }
+
+            return sendResponse('All Quiz', $quiz);
         }
 
         return sendError('Error fetching Quiz', [], 400);
     }
+
     public function generateQuizQuestion($id)
     {
         $studyPlan = StudyPlan::where('id', $id)->first();
         if ($studyPlan) {
-            return $this->generateQuizFromText($studyPlan->simplified_notes,$studyPlan->id);
+            return $this->generateQuizFromText($studyPlan->simplified_notes, $studyPlan->id, $studyPlan->course_title);
         }
     }
 
 
-    private function generateQuizFromText($jsonDataString,$study_plan_id)
+    private function generateQuizFromText($jsonDataString, $study_plan_id, $course_title)
     {
         $userPrompt = "generate a set of quiz questions in JSON format. 
             Support questions involving math or calculations. Where necessary, format equations using LaTeX notation (e.g., \\frac{a}{b}, x^2, etc.).
@@ -57,30 +67,30 @@ class QuizController extends Controller
             - You just json object no other text.,
             - Make sure the questions contains beginner,intermediate and advanced so you shuffle it all together.";
 
-         $fullPrompt = "Here is some context data in JSON format:\n" .
-                  "```json\n" .
-                  $jsonDataString . "\n" .
-                  "```\n\n" .
-                  "Based on the above JSON data, please perform the following task:\n" .
-                  $userPrompt;
+        $fullPrompt = "Here is some context data in JSON format:\n" .
+            "```json\n" .
+            $jsonDataString . "\n" .
+            "```\n\n" .
+            "Based on the above JSON data, please perform the following task:\n" .
+            $userPrompt;
 
-         $response = Http::withHeaders([
+        $response = Http::withHeaders([
             'Content-Type' => 'application/json',
         ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . env('GEMINI_API_KEY'), [
             'contents' => [
                 [
                     'parts' => [
-                        ['text' => $fullPrompt] 
+                        ['text' => $fullPrompt]
                     ]
                 ]
             ]
-        ]);          
+        ]);
         if (!$response->successful()) {
             Log::error('Gemini simplification failed', ['status' => $response->status(), 'body' => $response->body()]);
             return 'Error generating quiz from AI.'; // Or throw an exception for better error handling
         }
 
-         $responseData = $response->json();
+        $responseData = $response->json();
 
         // Check if the expected keys exist before accessing
         if (
@@ -88,18 +98,21 @@ class QuizController extends Controller
             empty($responseData['candidates'][0]['content']['parts'][0]['text'])
         ) {
             Log::warning('Gemini response did not contain expected text content.', ['response' => $responseData]);
-            return 'No notes generated or unexpected AI response format.';
+            return sendError('No notes generated or unexpected AI response format.', [], 400);
         }
 
         $generatedJsonString = $responseData['candidates'][0]['content']['parts'][0]['text'];
 
         $cleanedJson = preg_replace('/^```json|```$/m', '', $generatedJsonString);
+        if ($cleanedJson == null) {
+            return sendError('Null Json.', [], 400);
+        }
         $cleanedJson = trim($cleanedJson);
-        $quizArray = json_decode($cleanedJson, true); 
+        $quizArray = json_decode($cleanedJson, true);
 
-        Log::info("cleaned json data" ,['response' => $quizArray]);
+        Log::info("cleaned json data", ['response' => $quizArray]);
 
-        return $this->save($quizArray,$study_plan_id);
+        return $this->save($quizArray, $study_plan_id, $course_title);
 
         // $quizJson = $response->json('text'); // This is a string
         // $cleanedJson = preg_replace('/^```json|```$/m', '', $quizJson);
@@ -110,19 +123,28 @@ class QuizController extends Controller
         // return $response->json('text') ?? 'No quiz generated.';
     }
 
-    public function save($questions,$study_plan_id){
+    public function save($questions, $study_plan_id, $course_description)
+    {
         // return $questions;
+        $quiz = Quiz::create([
+            "title" => $course_description,
+            "user_id" => Auth::id(),
+            "study_plan_id" => $study_plan_id,
+        ]);
+        // return 1234;
+
         foreach ($questions as $key => $question) {
-            Quiz::create([
-                "user_id" => Auth::id(),
-                "study_plan_id" => $study_plan_id,
+            QuizQuestion::create([
+                "quiz_id" => $quiz->id,
                 "question" => $question['question'],
                 "type" => $question['type'],
-                "options" => $question['options'],
+                "options" => json_encode($question['options']),
                 "answer" => $question['answer'],
             ]);
         }
 
-         return sendResponse('Quiz Generated Successfully', $questions);  
+        return sendResponse('Quiz Generated Successfully', $questions);
     }
+
+    public function submitQuiz() {}
 }
