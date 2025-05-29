@@ -38,8 +38,11 @@ class QuizController extends Controller
     public function generateQuizQuestion($id)
     {
         $studyPlan = StudyPlan::where('id', $id)->first();
+
+        $decoded = json_decode($studyPlan->simplified_notes, true); 
+        $studyNotes = $decoded['studyNotes'];
         if ($studyPlan) {
-            return $this->generateQuizFromText($studyPlan->simplified_notes, $studyPlan->id, $studyPlan->course_title);
+            return $this->generateQuizFromText($studyNotes,$studyPlan->id, $studyPlan->course_title);
         }
     }
 
