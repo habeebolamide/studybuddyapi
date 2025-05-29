@@ -18,6 +18,7 @@ return new class extends Migration
             $table->enum('type', ['multiple_choice', 'true_false', 'short_answer']);
             $table->json('options')->nullable();
             $table->text('answer'); 
+            $table->integer('score')->default(0);
             $table->timestamps();
         });
     }

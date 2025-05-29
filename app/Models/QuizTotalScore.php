@@ -4,9 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class QuizAnswer extends Model
+class QuizTotalScore extends Model
 {
     //
-
     protected $guarded = [];
 }

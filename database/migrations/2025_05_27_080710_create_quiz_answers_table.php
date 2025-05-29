@@ -16,7 +16,7 @@ return new class extends Migration
             $table->uuid('user_id')->index();
             $table->foreignId('quiz_question_id')->references('id')->on('quiz_questions');
             $table->string('chosen_option');
-            $table->string('correct_opton');
+            $table->string('correct_option');
             $table->timestamps();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
