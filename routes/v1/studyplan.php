@@ -12,7 +12,7 @@ Route::group(['prefix' => '/studyplan'], function () {
     Route::get('/get_simplified_notes/{id}', [StudyPlanController::class, 'getSimplifiedNotes']);
 
     Route::get('/get_quiz/{study_plan_id}', [QuizController::class, 'getQuiz']);
-    Route::post('/generate_quiz', [QuizController::class, 'generateQuizQuestion']);
+    Route::post('/generate_quiz/{id}', [QuizController::class, 'generateQuizQuestion']);
     Route::post('/submit_quiz', [QuizController::class, 'submitQuiz']);
 
 });

@@ -67,105 +67,105 @@ class StudyPlanController extends Controller
         }
     }
 
-    public function process($files, $id)
-    {
-        try {
-            $summaries = [];
+    // public function process($files, $id)
+    // {
+    //     try {
+    //         $summaries = [];
 
-            foreach ($files as $file) {
-                $summary = $this->processPdfWithGemini($file['stored_path']);
+    //         foreach ($files as $file) {
+    //             $summary = $this->processPdfWithGemini($file['stored_path']);
 
-                if (empty($summary)) {
-                    return sendError("Couldn't generate summary note", [], 400);
-                }
+    //             if (empty($summary)) {
+    //                 return sendError("Couldn't generate summary note", [], 400);
+    //             }
 
-                StudyPlan::where('id', $id)->update([
-                    "simplified_notes" => json_encode($summary)
-                ]);
+    //             StudyPlan::where('id', $id)->update([
+    //                 "simplified_notes" => json_encode($summary)
+    //             ]);
 
-                app(QuizController::class)->generateQuizQuestion($id);
+    //             app(QuizController::class)->generateQuizQuestion($id);
 
-                $summaries[] = [
-                    'file' => $file['stored_path'],
-                    'summary' => $summary,
-                ];
-            }
+    //             $summaries[] = [
+    //                 'file' => $file['stored_path'],
+    //                 'summary' => $summary,
+    //             ];
+    //         }
 
-            return sendResponse('Summaries generated successfully.', [
-                'simplified' => $summaries,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Processing error', ['error' => $e->getMessage()]);
-            return sendError('Internal server error while processing PDF.', [], 500);
-        }
-    }
+    //         return sendResponse('Summaries generated successfully.', [
+    //             'simplified' => $summaries,
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         Log::error('Processing error', ['error' => $e->getMessage()]);
+    //         return sendError('Internal server error while processing PDF.', [], 500);
+    //     }
+    // }
 
-    private function processPdfWithGemini($pdfFilePath, $model = 'gemini-2.0-flash')
-    {
-        $apiKey = env('GEMINI_API_KEY');
+    // private function processPdfWithGemini($pdfFilePath, $model = 'gemini-2.0-flash')
+    // {
+    //     $apiKey = env('GEMINI_API_KEY');
 
-        if (empty($apiKey)) {
-            Log::error('GEMINI_API_KEY is not configured.');
-            return null;
-        }
+    //     if (empty($apiKey)) {
+    //         Log::error('GEMINI_API_KEY is not configured.');
+    //         return null;
+    //     }
 
-        if (!Storage::disk('public')->exists($pdfFilePath)) {
-            return null;
-        }
+    //     if (!Storage::disk('public')->exists($pdfFilePath)) {
+    //         return null;
+    //     }
 
-        $pdfContent = Storage::disk('public')->get($pdfFilePath);
-        $base64Pdf = base64_encode($pdfContent);
-        $mimeType = 'application/pdf';
+    //     $pdfContent = Storage::disk('public')->get($pdfFilePath);
+    //     $base64Pdf = base64_encode($pdfContent);
+    //     $mimeType = 'application/pdf';
 
-        $prompt = '
-            You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in valid JSON format.
+    //     $prompt = '
+    //         You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in valid JSON format.
 
-            Each note should:
-            - Contain a "topic" field (short summary or title of the section)
-            - Include a "note" field with an easy-to-understand explanation
-            - Contain at least 3–5 examples
+    //         Each note should:
+    //         - Contain a "topic" field (short summary or title of the section)
+    //         - Include a "note" field with an easy-to-understand explanation
+    //         - Contain at least 3–5 examples
 
-            Output only the JSON structure without markdown code blocks or extra formatting.
+    //         Output only the JSON structure without markdown code blocks or extra formatting.
 
-            Example:
-            [
-                {
-                    "topic": "Photosynthesis",
-                    "note": "Photosynthesis is the process..."
-                }
-            ]
-            ';
+    //         Example:
+    //         [
+    //             {
+    //                 "topic": "Photosynthesis",
+    //                 "note": "Photosynthesis is the process..."
+    //             }
+    //         ]
+    //         ';
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'x-goog-api-key' => $apiKey,
-        ])->timeout(120)
-        ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
-            'contents' => [[
-                'parts' => [
-                    ['inlineData' => ['mimeType' => $mimeType, 'data' => $base64Pdf]],
-                    ['text' => $prompt]
-                ]
-            ]]
-        ]);
+    //     $response = Http::withHeaders([
+    //         'Content-Type' => 'application/json',
+    //         'x-goog-api-key' => $apiKey,
+    //     ])->timeout(120)
+    //     ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
+    //         'contents' => [[
+    //             'parts' => [
+    //                 ['inlineData' => ['mimeType' => $mimeType, 'data' => $base64Pdf]],
+    //                 ['text' => $prompt]
+    //             ]
+    //         ]]
+    //     ]);
 
-        if (!$response->successful()) {
-            Log::error('Gemini API error', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-            return null;
-        }
+    //     if (!$response->successful()) {
+    //         Log::error('Gemini API error', [
+    //             'status' => $response->status(),
+    //             'body' => $response->body(),
+    //         ]);
+    //         return null;
+    //     }
 
-        $content = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    //     $content = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '';
 
-        if (empty($content)) {
-            return null;
-        }
+    //     if (empty($content)) {
+    //         return null;
+    //     }
 
-        $cleanedJson = trim(preg_replace('/^```json|```$/m', '', $content));
-        return json_decode($cleanedJson, true);
-    }
+    //     $cleanedJson = trim(preg_replace('/^```json|```$/m', '', $content));
+    //     return json_decode($cleanedJson, true);
+    // }
 
     public function getAll()
     {
@@ -179,10 +179,10 @@ class StudyPlanController extends Controller
     {
         $notes = StudyPlan::where('id', $id)->pluck('simplified_notes')->first();
         $decoded = json_decode($notes, true); 
-        $studyNotes = $decoded['studyNotes'];
+        // $studyNotes = $decoded['notes'];
 
-        return $studyNotes
-            ? sendResponse('Simplified Notes', $studyNotes)
+        return $decoded
+            ? sendResponse('Simplified Notes', $decoded)
             : sendError('No simplified notes found.', [], 404);
     }
 }

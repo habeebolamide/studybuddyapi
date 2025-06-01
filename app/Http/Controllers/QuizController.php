@@ -39,10 +39,12 @@ class QuizController extends Controller
     {
         $studyPlan = StudyPlan::where('id', $id)->first();
 
-        $decoded = json_decode($studyPlan->simplified_notes, true); 
-        $studyNotes = $decoded['studyNotes'];
+        $decoded = json_decode($studyPlan->simplified_notes, true);
+
+        Log::info("Decoded json", ['response' => $decoded]);
+
         if ($studyPlan) {
-            return $this->generateQuizFromText($studyNotes,$studyPlan->id, $studyPlan->course_title);
+            return $this->generateQuizFromText($decoded, $studyPlan->id, $studyPlan->course_title);
         }
     }
 
@@ -67,14 +69,14 @@ class QuizController extends Controller
             - Questions assess key understanding from the content.
             - It is only multiple choice questions
             - The 'answer' field contains the actual correct response (not a label like 'A', 'B', etc.).
-            - Include at least 15 questions.
+            - Include as much questions as you think it will be enough to test a university student.
             - Focus on clarity and student-friendliness.,
             - You just json object no other text.,
             - Make sure the questions contains beginner,intermediate and advanced so you shuffle it all together.";
 
         $fullPrompt = "Here is some context data in JSON format:\n" .
             "```json\n" .
-            $jsonDataString . "\n" .
+            json_encode($jsonDataString, JSON_PRETTY_PRINT) . "\n" .
             "```\n\n" .
             "Based on the above JSON data, please perform the following task:\n" .
             $userPrompt;
@@ -115,28 +117,18 @@ class QuizController extends Controller
         $cleanedJson = trim($cleanedJson);
         $quizArray = json_decode($cleanedJson, true);
 
-        Log::info("cleaned json data", ['response' => $quizArray]);
+        Log::info("quiz questions", ['response' => $quizArray]);
 
         return $this->save($quizArray, $study_plan_id, $course_title);
-
-        // $quizJson = $response->json('text'); // This is a string
-        // $cleanedJson = preg_replace('/^```json|```$/m', '', $quizJson);
-        // $cleanedJson = trim($cleanedJson);
-        // $quizArray = json_decode($cleanedJson, true); 
-        // return $this->save($quizArray,$study_plan_id);
-
-        // return $response->json('text') ?? 'No quiz generated.';
     }
 
     public function save($questions, $study_plan_id, $course_description)
     {
-        // return $questions;
         $quiz = Quiz::create([
             "title" => $course_description,
             "user_id" => Auth::id(),
             "study_plan_id" => $study_plan_id,
         ]);
-        // return 1234;
 
         foreach ($questions as $key => $question) {
             QuizQuestion::create([
@@ -153,51 +145,53 @@ class QuizController extends Controller
 
     public function submitQuiz(Request $request)
     {
-        $answers = $request->selected_answers;
-        $results = [];
+        try {
+            $answers = $request->selected_answers;
+            $results = [];
 
-        foreach ($answers as $value) {
-            $question = QuizQuestion::where('id', $value['question_id'])->first();
+            foreach ($answers as $value) {
+                $question = QuizQuestion::where('id', $value['question_id'])->first();
+                $existing = QuizAnswer::where('user_id', Auth::id())
+                    ->where('quiz_question_id', $value['question_id'])
+                    ->first();
 
-            // Prevent duplicate answers
-            $existing = QuizAnswer::where('user_id', Auth::id())
-                ->where('quiz_question_id', $value['question_id'])
-                ->first();
+                if ($existing) {
+                    continue;
+                }
 
-            if ($existing) {
-                continue; 
+                QuizAnswer::create([
+                    'user_id' => Auth::id(),
+                    'quiz_question_id' => $value['question_id'],
+                    'chosen_option' => $value['selected_answer'],
+                    'correct_option' => $question->answer,
+                ]);
+
+                if ($question->answer === $value['selected_answer']) {
+                    $question->score = 1;
+                    $question->save();
+                }
+
+                $results[] = [
+                    'question_id' => $value['question_id'],
+                    'correct' => $question->answer === $value['selected_answer']
+                ];
             }
+            $correctCount = count(array_filter($results, fn($res) => $res['correct'] === true));
 
-            QuizAnswer::create([
+            QuizTotalScore::create([
+                'quiz_id' => $request->quiz_id,
                 'user_id' => Auth::id(),
-                'quiz_question_id' => $value['question_id'],
-                'chosen_option' => $value['selected_answer'],
-                'correct_opton' => $question->answer,
+                "score" => $correctCount,
             ]);
-
-            if ($question->answer === $value['selected_answer']) {
-                $question->score = 1;
-                $question->save();
-            }
-
-            $results[] = [
-                'question_id' => $value['question_id'],
-                'correct' => $question->answer === $value['selected_answer']
-            ];
+            Quiz::where('id', $request->quiz_id)->update([
+                'status' => 'completed'
+            ]);
+            return response()->json([
+                'success' => true,
+                'results' => $results
+            ]);
+        } catch (\Exception $e) {
+            return sendError($e->getMessage(), [], 400);
         }
-        $correctCount = count(array_filter($results, fn($res) => $res['correct'] === true));
-
-        QuizTotalScore::create([
-            'quiz_id' => $request->quiz_id,
-            'user_id' => Auth::id(),
-            "score" => $correctCount,
-        ]);
-        Quiz::where('id' , $request->quiz_id)->update([
-            'status' => 'completed'
-        ]);
-        return response()->json([
-            'success' => true,
-            'results' => $results
-        ]);
     }
 }

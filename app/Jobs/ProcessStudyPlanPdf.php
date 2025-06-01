@@ -34,11 +34,10 @@ class ProcessStudyPlanPdf implements ShouldQueue
                 return;
             }
 
-            StudyPlan::where('id', $this->studyPlanId)->update([
-                "simplified_notes" => $summary
-            ]);
-
-            app(QuizController::class)->generateQuizQuestion($this->studyPlanId);
+            $studyplan = StudyPlan::where('id', $this->studyPlanId)->first();
+            
+            $studyplan->simplified_notes = $summary;
+            $studyplan->save();
 
         } catch (\Exception $e) {
             Log::error('Job failed: ' . $e->getMessage());
@@ -61,15 +60,27 @@ class ProcessStudyPlanPdf implements ShouldQueue
         $content = Storage::disk('public')->get($pdfPath);
         $base64 = base64_encode($content);
 
-        $prompt = <<<EOT
-You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in valid JSON format.
+        $prompt = "
+            You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in valid JSON format.
 
-Each note should:
-- Contain a 'topic' field (short summary or title of the section) 
-- Include a 'note' field with an easy-to-understand explanation and each note should contain at least 3 examples for better understanding
+            Each note should include:
 
-Return ONLY the JSON. No code block formatting.
-EOT;
+            'topic': A short, clear title that summarizes the main idea or section.
+
+            'note': A well-explained, easy-to-understand explanation of the concept that helps someone prepare for an exam. Use simple language and include step-by-step solutions or methods only if needed.
+
+            'examples': A list containing at least 3 examples to reinforce the concept. Examples can be real-life, definitions, or short questions (with or without answers) — but if the topic requires it, include at least one full example with a solution.
+
+            Return ONLY the JSON. No code block formatting.
+             Example:
+            [
+                {
+                    'topic': 'Photosynthesis',
+                    'note': 'Photosynthesis is the process...'
+                    'examples':[]
+                }
+            ]
+            ";
 
         $response = Http::withHeaders([
             'Content-Type' => 'application/json',
@@ -92,6 +103,8 @@ EOT;
         if (!$raw) return null;
 
         $cleaned = trim(preg_replace('/^```json|```$/m', '', $raw));
-        return json_decode($cleaned, true);
+        $json = json_decode($cleaned, true);
+        // Log::info("Cleaned json", ['response' => $json]);
+        return $json ;
     }
 }
