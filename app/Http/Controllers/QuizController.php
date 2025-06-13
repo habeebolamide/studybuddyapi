@@ -18,9 +18,21 @@ class QuizController extends Controller
 {
     //
 
-    public function getQuiz($study_plan_id)
+    public function getallQuiz()
     {
-        $quiz = Quiz::where('study_plan_id', $study_plan_id)
+        $quiz = Quiz::where(['user_id' => Auth::id()])
+           ->get();
+
+        if ($quiz) {
+            return sendResponse('All Quiz', $quiz);
+        }
+
+        return sendError('Error fetching Quiz', [], 400);
+    }
+
+     public function getQuiz($id)
+    {
+        $quiz = Quiz::where(['id'=> $id, 'user_id' => Auth::id()])
             ->with('questions')
             ->first();
 
@@ -97,7 +109,7 @@ class QuizController extends Controller
         ]);
         if (!$response->successful()) {
             Log::error('Gemini simplification failed', ['status' => $response->status(), 'body' => $response->body()]);
-            return 'Error generating quiz from AI.'; // Or throw an exception for better error handling
+            return sendError('Error generating quiz from AI.', [], 400);
         }
 
         $responseData = $response->json();
@@ -142,8 +154,11 @@ class QuizController extends Controller
                 "answer" => $question['answer'],
             ]);
         }
-
-        return sendResponse('Quiz Generated Successfully', $questions);
+        $success = [
+            'quiz_id' => $quiz->id,
+            'title' => $quiz->title,
+        ];
+        return sendResponse('Quiz Generated Successfully', $success);
     }
 
     public function submitQuiz(Request $request)

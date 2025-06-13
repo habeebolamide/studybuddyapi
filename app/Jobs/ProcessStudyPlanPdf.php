@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\FCMService;
 class ProcessStudyPlanPdf implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
@@ -42,15 +41,6 @@ class ProcessStudyPlanPdf implements ShouldQueue
             
             $studyplan->simplified_notes = $summary;
             $user = User::find($studyplan->user_id);
-            $fcmService = new FCMService();
-            if ($studyplan->save()) {
-                $fcmService->sendNotification(
-                    $user->fcm_token,
-                    'Study Plan Processed',
-                    'Your study plan has been processed successfully.',
-                    ['study_plan_id' => $this->studyPlanId]
-                );
-            }
 
         } catch (\Exception $e) {
             Log::error('Job failed: ' . $e->getMessage());
