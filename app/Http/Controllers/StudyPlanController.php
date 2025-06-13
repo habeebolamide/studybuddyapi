@@ -177,12 +177,28 @@ class StudyPlanController extends Controller
 
     public function getSimplifiedNotes($id)
     {
-        $notes = StudyPlan::where('id', $id)->pluck('simplified_notes')->first();
-        $decoded = json_decode($notes, true); 
+        $notes = DB::table('study_plans')
+                ->leftJoin('quizzes', 'study_plans.id', '=', 'quizzes.study_plan_id')
+                ->where('study_plans.id', $id)
+                ->where('study_plans.user_id', Auth::id())
+                ->select('study_plans.simplified_notes', 'quizzes.id as quiz_id')
+                ->first();
+
+
+         if (!$notes) {
+            return sendError('Study plan not found or you do not have permission to access it.', [], 404);
+        }
+
+        $decoded = json_decode($notes->simplified_notes, true); 
+        // return $notes;
+
         // $studyNotes = $decoded['notes'];
 
-        return $decoded
-            ? sendResponse('Simplified Notes', $decoded)
+        return $notes
+            ? sendResponse('Simplified Notes', [
+                'study_notes' => $decoded,
+                'quiz_exists' => $notes->quiz_id ? true : false,
+            ])
             : sendError('No simplified notes found.', [], 404);
     }
 }

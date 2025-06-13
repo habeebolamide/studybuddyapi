@@ -3,6 +3,7 @@ namespace App\Jobs;
 
 use App\Models\StudyPlan\StudyPlan;
 use App\Http\Controllers\QuizController;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-
+use App\Services\FCMService;
 class ProcessStudyPlanPdf implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
@@ -27,17 +28,29 @@ class ProcessStudyPlanPdf implements ShouldQueue
     public function handle(): void
     {
         try {
+            $studyplan = StudyPlan::where('id', $this->studyPlanId)->first();
+            if (!$studyplan) {
+                Log::error("Study plan not found for ID: " . $this->studyPlanId);
+                return;
+            }
             $summary = $this->processPdfWithGemini($this->file['stored_path']);
 
             if (!$summary) {
                 Log::error("Gemini returned no summary for file: " . $this->file['stored_path']);
                 return;
             }
-
-            $studyplan = StudyPlan::where('id', $this->studyPlanId)->first();
             
             $studyplan->simplified_notes = $summary;
-            $studyplan->save();
+            $user = User::find($studyplan->user_id);
+            $fcmService = new FCMService();
+            if ($studyplan->save()) {
+                $fcmService->sendNotification(
+                    $user->fcm_token,
+                    'Study Plan Processed',
+                    'Your study plan has been processed successfully.',
+                    ['study_plan_id' => $this->studyPlanId]
+                );
+            }
 
         } catch (\Exception $e) {
             Log::error('Job failed: ' . $e->getMessage());
@@ -104,6 +117,8 @@ class ProcessStudyPlanPdf implements ShouldQueue
 
         $cleaned = trim(preg_replace('/^```json|```$/m', '', $raw));
         $json = json_decode($cleaned, true);
+
+       
         // Log::info("Cleaned json", ['response' => $json]);
         return $json ;
     }

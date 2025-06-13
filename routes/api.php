@@ -13,4 +13,5 @@ require "v1/auth.php";
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     require "v1/studyplan.php";
+    require "v1/dasboard.php";
 });

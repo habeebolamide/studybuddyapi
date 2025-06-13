@@ -37,8 +37,11 @@ class QuizController extends Controller
 
     public function generateQuizQuestion($id)
     {
-        $studyPlan = StudyPlan::where('id', $id)->first();
+        $studyPlan = StudyPlan::where(['id' => $id, 'user_id' => Auth::id()])->first();
 
+        if (!$studyPlan) {
+            return sendError('Study plan not found or you do not have permission to access it.', [], 404);
+        }
         $decoded = json_decode($studyPlan->simplified_notes, true);
 
         Log::info("Decoded json", ['response' => $decoded]);
