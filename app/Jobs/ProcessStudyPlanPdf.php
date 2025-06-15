@@ -64,16 +64,16 @@ class ProcessStudyPlanPdf implements ShouldQueue
         $base64 = base64_encode($content);
 
         $prompt = "
-            You are a helpful study assistant. Based on the content below, generate clear, simplified, and well-structured study notes in valid JSON format.
+            You are a helpful study assistant. Based on the content below, generate clear, comprehensive, and well-structured study notes in valid JSON format.
 
             Each note should include:
 
             'topic': A short, clear title that summarizes the main idea or section.
 
-            'note': A well-explained, easy-to-understand explanation of the concept that helps someone prepare for an exam. Use simple language and include step-by-step solutions or methods only if needed.
+            'note': A comprehensive, yet easy-to-understand explanation of the concept, delving into key details, sub-topics, and nuances as if providing material from a study guide or textbook chapter. Ensure the explanation provides sufficient depth for a thorough understanding, not just a surface-level summary. Use simple language and include step-by-step solutions or methods only if needed.
 
             'examples': A list containing at least 3 examples to reinforce the concept. Examples can be real-life, definitions, or short questions (with or without answers) — but if the topic requires it, include at least one full example with a solution.
-
+            
             Return ONLY the JSON. No code block formatting.
              Example:
             [
