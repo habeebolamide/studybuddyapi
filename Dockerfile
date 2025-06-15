@@ -3,18 +3,16 @@ FROM node:20 as frontend
 
 WORKDIR /app
 
-# Copy only frontend files to install first (caching optimization)
+# Copy only frontend files first (for caching)
 COPY package*.json ./
 
 RUN npm install
 
-# Copy the rest of the app
+# Copy rest of the project and build assets
 COPY . .
-
-# Build assets
 RUN npm run build
 
-# Stage 2: Backend - Laravel with PHP
+# Stage 2: Laravel Backend - PHP
 FROM php:8.2-fpm
 
 # Install system dependencies and PHP extensions
@@ -29,16 +27,20 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /app
 
-# Copy built app from previous stage
+# Copy built project from frontend stage
 COPY --from=frontend /app /app
+
+# Copy entrypoint scripts
+COPY entrypoint.web.sh /usr/local/bin/entrypoint.web.sh
+COPY entrypoint.worker.sh /usr/local/bin/entrypoint.worker.sh
+
+# Make all shell scripts executable
+RUN chmod +x ./deploy.sh \
+    /usr/local/bin/entrypoint.web.sh \
+    /usr/local/bin/entrypoint.worker.sh
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Make deploy.sh executable and run it
-RUN chmod +x ./deploy.sh && ./deploy.sh
-
-# Expose the default php-fpm port
-EXPOSE 9000
-
-CMD ["php-fpm"]
+# Set default command to web entrypoint
+CMD ["entrypoint.web.sh"]
