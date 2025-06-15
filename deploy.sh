@@ -26,6 +26,8 @@ php artisan view:cache
 # Run any database migrations
 php artisan migrate --force
 
+# Run any queued jobs
+php artisan queue:work --force --no-interaction &
 # Check if the environment variable is set to "false" or not set at all
 if [[ "${!ENV_VAR_NAME}" = "false" ]] || [[ -z "${!ENV_VAR_NAME}" ]]; then
   echo "Exiting maintenance mode..."
