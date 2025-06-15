@@ -33,8 +33,11 @@ RUN composer install --no-dev --optimize-autoloader
 # Clear and cache Laravel config
 RUN php artisan config:clear && php artisan config:cache
 
+# Make deploy.sh executable
+RUN chmod +x deploy.sh
+
 # Expose port Railway expects
 EXPOSE 8080
 
-# Start Laravel's built-in web server
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]
+# Start Laravel's built-in web server AFTER deploy.sh
+CMD ["sh", "-c", "./deploy.sh && php artisan serve --host=0.0.0.0 --port=8080"]
