@@ -40,6 +40,7 @@ class ProcessStudyPlanPdf implements ShouldQueue
             }
             
             $studyplan->simplified_notes = $summary;
+            $studyplan->save();
             $user = User::find($studyplan->user_id);
 
         } catch (\Exception $e) {
@@ -49,6 +50,8 @@ class ProcessStudyPlanPdf implements ShouldQueue
 
     private function processPdfWithGemini(string $pdfPath, string $model = 'gemini-2.0-flash')
     {
+        Log::info("Me sef reach here", ['pdfPath' => $pdfPath, 'model' => $model]);
+
         $apiKey = env('GEMINI_API_KEY');
         if (empty($apiKey)) {
             Log::error('GEMINI_API_KEY not set.');
@@ -109,7 +112,7 @@ class ProcessStudyPlanPdf implements ShouldQueue
         $json = json_decode($cleaned, true);
 
        
-        // Log::info("Cleaned json", ['response' => $json]);
+        Log::info("Cleaned json", ['response' => $json]);
         return $json ;
     }
 }

@@ -25,7 +25,7 @@ php artisan view:cache
 
 # Run any database migrations
 php artisan migrate --force
-
+php artisan db:seed --force
 echo "Worker setup skipped — will be started in a separate container."
 
 # Check if the environment variable is set to "false" or not set at all
