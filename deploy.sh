@@ -11,6 +11,14 @@ if [[ "${!ENV_VAR_NAME}" = "true" ]]; then
   php artisan down
 fi
 
+if [[ "${SHOULD_SEED}" = "true" ]]; then
+  echo "Seeding database..."
+  php artisan db:seed --force
+else
+  echo "Skipping seeding (SHOULD_SEED not true)."
+fi
+
+
 # Build assets using NPM
 npm run build
 
@@ -33,3 +41,6 @@ if [[ "${!ENV_VAR_NAME}" = "false" ]] || [[ -z "${!ENV_VAR_NAME}" ]]; then
   echo "Exiting maintenance mode..."
   php artisan up
 fi
+
+# 🟢 START the Laravel server to keep the container alive
+php artisan serve --host=0.0.0.0 --port=${PORT:-8080}
