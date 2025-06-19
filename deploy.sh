@@ -1,46 +1,26 @@
 #!/bin/bash
 
-# Make sure this file has executable permissions, run `chmod +x deploy.sh` to ensure it does
+# Ensure script stops on errors
+set -e
 
-# Variable name to check maintenance mode
-ENV_VAR_NAME="MAINTENANCE_MODE"
+echo "🔧 Running Laravel deployment tasks..."
 
-# Check if the environment variable is set to "true"
-if [[ "${!ENV_VAR_NAME}" = "true" ]]; then
-  echo "Entering maintenance mode..."
-  php artisan down
-fi
-
-if [[ "${SHOULD_SEED}" = "true" ]]; then
-  echo "Seeding database..."
-  php artisan db:seed --force
-else
-  echo "Skipping seeding (SHOULD_SEED not true)."
-fi
-
-
-# Build assets using NPM
-npm run build
-
-# Clear cache
+# Clear caches to prevent stale configs
 php artisan optimize:clear
 
-# Cache the various components of the Laravel application
+# Cache configs, routes, views, events for performance
 php artisan config:cache
-php artisan event:cache
 php artisan route:cache
 php artisan view:cache
+php artisan event:cache
 
-# Run any database migrations
+# Run migrations
 php artisan migrate --force
-php artisan db:seed --force
-echo "Worker setup skipped — will be started in a separate container."
 
-# Check if the environment variable is set to "false" or not set at all
-if [[ "${!ENV_VAR_NAME}" = "false" ]] || [[ -z "${!ENV_VAR_NAME}" ]]; then
-  echo "Exiting maintenance mode..."
-  php artisan up
-fi
+# (Optional) Create storage symlink for public files
+php artisan storage:link || true
 
-# 🟢 START the Laravel server to keep the container alive
-php artisan serve --host=0.0.0.0 --port=${PORT:-8080}
+echo "✅ Deployment tasks completed."
+
+# Start PHP-FPM to keep the container running
+exec php-fpm

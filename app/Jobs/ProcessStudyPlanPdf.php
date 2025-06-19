@@ -27,31 +27,31 @@ class ProcessStudyPlanPdf implements ShouldQueue
     public function handle(): void
     {
         try {
-            $studyplan = StudyPlan::where('id', $this->studyPlanId)->first();
+            $studyplan = StudyPlan::where(['id' => $this->studyPlanId])->first();
             if (!$studyplan) {
                 Log::error("Study plan not found for ID: " . $this->studyPlanId);
+                Storage::disk('public')->delete($this->file['stored_path']);
                 return;
             }
             $summary = $this->processPdfWithGemini($this->file['stored_path']);
 
             if (!$summary) {
                 Log::error("Gemini returned no summary for file: " . $this->file['stored_path']);
+                Storage::disk('public')->delete($this->file['stored_path']);
                 return;
             }
             
             $studyplan->simplified_notes = $summary;
             $studyplan->save();
-            $user = User::find($studyplan->user_id);
-
+            
         } catch (\Exception $e) {
+            Storage::disk('public')->delete($this->file['stored_path']);
             Log::error('Job failed: ' . $e->getMessage());
         }
     }
 
-    private function processPdfWithGemini(string $pdfPath, string $model = 'gemini-2.0-flash')
+    private function processPdfWithGemini(string $pdfPath, string $model = 'gemini-2.5-flash')
     {
-        Log::info("Me sef reach here", ['pdfPath' => $pdfPath, 'model' => $model]);
-
         $apiKey = env('GEMINI_API_KEY');
         if (empty($apiKey)) {
             Log::error('GEMINI_API_KEY not set.');
@@ -66,32 +66,47 @@ class ProcessStudyPlanPdf implements ShouldQueue
         $content = Storage::disk('public')->get($pdfPath);
         $base64 = base64_encode($content);
 
-        $prompt = "
-            You are a helpful study assistant. Based on the content below, generate clear, comprehensive, and well-structured study notes in valid JSON format.
+        $prompt = "You are an intelligent and pedagogically sound study assistant designed to help learners deeply understand academic material. Based on the content provided, generate high-quality, well-structured study notes in valid JSON format — optimized for use in digital learning platforms, flashcard systems, or revision tools.
+        
+                Each note object must include the following fields:
 
-            Each note should include:
+                - **'topic'**: A concise, descriptive title capturing the essence of the concept, chapter, or section. Avoid vague or overly broad titles.
 
-            'topic': A short, clear title that summarizes the main idea or section.
+                - **'note'**: A detailed, accessible, and pedagogically sound explanation. The note should:
+                • Cover the main concept and its purpose or significance  
+                • Break down complex ideas into digestible sub-parts  
+                • Include analogies or real-world context where appropriate  
+                • Provide step-by-step walkthroughs of key methods or formulas if the topic is procedural  
+                • Avoid jargon unless clearly defined within the note  
+                • Be suitable for learners aiming for deep comprehension, not just memorization  
 
-            'note': A comprehensive, yet easy-to-understand explanation of the concept, delving into key details, sub-topics, and nuances as if providing material from a study guide or textbook chapter. Ensure the explanation provides sufficient depth for a thorough understanding, not just a surface-level summary. Use simple language and include step-by-step solutions or methods only if needed.
+                - **'examples'**: A minimum of 3 diverse examples to solidify understanding:
+                • All examples should be relevant to the topic and illustrate different aspects or applications of the concept
+                • Add a mix of real-life applications, short quizzes (with or without answers), or scenario-based questions  
+                • Format examples in plain text; clarity is key
 
-            'examples': A list containing at least 3 examples to reinforce the concept. Examples can be real-life, definitions, or short questions (with or without answers) — but if the topic requires it, include at least one full example with a solution.
-            
-            Return ONLY the JSON. No code block formatting.
-             Example:
-            [
-                {
-                    'topic': 'Photosynthesis',
-                    'note': 'Photosynthesis is the process...'
-                    'examples':[]
-                }
-            ]
-            ";
+                **Output Requirements:**
+                - Return only the JSON array of objects — no introductory or explanatory text, and no code block formatting.
+                - Ensure all JSON syntax is valid and structured for direct parsing by front-end applications.
+
+                **Example Output:**
+                [
+                    {
+                        'topic': 'Photosynthesis',
+                        'note': 'Photosynthesis is the process by which green plants...',
+                        'examples': [
+                            'What are the raw materials needed for photosynthesis?',
+                            'A worked example: Calculate the rate of photosynthesis when light intensity doubles...',
+                            'Real-life example: How do greenhouses optimize photosynthesis for crop yield?'
+                        ]
+                    }
+                ]";
+
 
         $response = Http::withHeaders([
             'Content-Type' => 'application/json',
             'x-goog-api-key' => $apiKey,
-        ])->timeout(90)->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
+        ])->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
             'contents' => [[
                 'parts' => [
                     ['inlineData' => ['mimeType' => 'application/pdf', 'data' => $base64]],
@@ -106,6 +121,9 @@ class ProcessStudyPlanPdf implements ShouldQueue
         }
 
         $raw = $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+        Log::info("Raw response", ['response' => $raw]);
+
         if (!$raw) return null;
 
         $cleaned = trim(preg_replace('/^```json|```$/m', '', $raw));
