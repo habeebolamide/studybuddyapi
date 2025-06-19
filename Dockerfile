@@ -23,30 +23,30 @@ RUN apt-get update && apt-get install -y \
         --with-jpeg \
     && docker-php-ext-install pdo pdo_mysql zip exif pcntl gd
 
-# 📦 Install Composer (via multi-stage)
+# 📦 Install Composer (multi-stage)
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# 📁 Copy full Laravel app (including composer.json, app/, bootstrap/, etc.)
+# 📁 Copy Laravel app (including composer files)
 COPY . .
 
-# 📦 Install PHP dependencies *after* all app files are copied
+# 📦 Install PHP dependencies after code is copied
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 
-# 🛡 Set proper permissions for Laravel
+# 🛡 Set permissions
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
-# ⚙️ Configure PHP-FPM to listen on 0.0.0.0:9000
+# ⚙️ Configure PHP-FPM to listen on all interfaces (good for Nginx)
 RUN echo "listen = 0.0.0.0:9000" > /usr/local/etc/php-fpm.d/zz-docker.conf
 
-# 🔧 Copy config files
+# 🔧 Copy configuration files
 COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY deploy.sh /deploy.sh
 RUN chmod +x /deploy.sh
 
-# 🚪 Expose Nginx port (Railway uses 8080)
+# 🚪 Expose Nginx port expected by Railway
 EXPOSE 8080
 
-# 🚀 Start everything via Supervisor
+# 🚀 Start Supervisor to manage PHP, Nginx, and queue workers
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
