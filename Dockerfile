@@ -37,6 +37,6 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 RUN chmod +x /deploy.sh
 
 # Expose port expected by Railway
-EXPOSE 8080
+EXPOSE 9000
 
 CMD ["/usr/bin/supervisord"]
