@@ -23,31 +23,30 @@ RUN apt-get update && apt-get install -y \
         --with-jpeg \
     && docker-php-ext-install pdo pdo_mysql zip exif pcntl gd
 
-# 📦 Install Composer
+# 📦 Install Composer (via multi-stage)
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# 🧾 Copy composer files first and install deps early
-COPY composer.json composer.lock ./
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
-
-# 📁 Copy rest of the application code
+# 📁 Copy full Laravel app (including composer.json, app/, bootstrap/, etc.)
 COPY . .
 
-# 🛡 Set permissions
+# 📦 Install PHP dependencies *after* all app files are copied
+RUN composer install --no-interaction --prefer-dist --optimize-autoloader
+
+# 🛡 Set proper permissions for Laravel
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www/storage /var/www/bootstrap/cache
 
-# ⚙️ Copy Nginx and Supervisor configs
+# ⚙️ Configure PHP-FPM to listen on 0.0.0.0:9000
+RUN echo "listen = 0.0.0.0:9000" > /usr/local/etc/php-fpm.d/zz-docker.conf
+
+# 🔧 Copy config files
 COPY nginx.conf /etc/nginx/sites-available/default
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY deploy.sh /deploy.sh
 RUN chmod +x /deploy.sh
 
-# ✅ Configure PHP-FPM to listen on 0.0.0.0
-RUN echo "listen = 0.0.0.0:9000" > /usr/local/etc/php-fpm.d/zz-docker.conf
-
-# 🚪 Expose port for Railway (Nginx)
+# 🚪 Expose Nginx port (Railway uses 8080)
 EXPOSE 8080
 
-# 🚀 Start Supervisor (manages PHP-FPM + Nginx + your deploy script)
+# 🚀 Start everything via Supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
